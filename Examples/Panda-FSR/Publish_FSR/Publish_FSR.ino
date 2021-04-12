@@ -14,6 +14,7 @@
 
 #include <WebSocketsClient.h>
 
+#include "network_credentials.h"
 
 WiFiMulti WiFiMulti;
 WebSocketsClient webSocket;
@@ -88,7 +89,7 @@ void setup() {
 		delay(1000);
 	}
 
-	WiFiMulti.addAP("SSID", "PASSWORD"); // Update here
+	WiFiMulti.addAP(ssid, pw); 
 
 	//WiFi.disconnect();
 	while(WiFiMulti.run() != WL_CONNECTED) {
@@ -110,11 +111,15 @@ void setup() {
 }
 void loop() {
 	webSocket.loop();
- 
+  float smoothing_weight = 0.2;
+  static int FSR_reading_smoothed_old;
+  int FSR_reading_smoothed = smoothing_weight * analogRead(A3) + (1 - smoothing_weight) * FSR_reading_smoothed_old;
+
   String msg = "{\"op\": \"publish\", \"topic\": \"/mojo_panda_touching\", \"msg\": {\"data\":"; // Update here
-  msg+= String(analogRead(A3));      
+  msg+= String(FSR_reading_smoothed);      
   msg+= "}}";
   webSocket.sendTXT(msg);
+  FSR_reading_smoothed_old = FSR_reading_smoothed;
 }
 
 

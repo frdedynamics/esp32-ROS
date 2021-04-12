@@ -1,4 +1,5 @@
 .theia/
+network_credentials.h
 
 # Prerequisites
 *.d
