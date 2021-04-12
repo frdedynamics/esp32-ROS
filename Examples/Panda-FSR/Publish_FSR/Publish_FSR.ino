@@ -1,88 +1,123 @@
+/*
+ * Based on WebSocketClient.ino
+ *
+ *  Created on: 24.05.2015
+ *
+ * Added a msg to ros bridge 2021
+ */
+
+#include <Arduino.h>
+
 #include <WiFi.h>
-#include <WebSocketClient.h> 
+#include <WiFiMulti.h>
+#include <WiFiClientSecure.h>
 
-// Set these to your desired credentials.
-const char *ssid = "robot_lan_2G";
-const char *password = "";
+#include <WebSocketsClient.h>
 
-// Update with ROS master IP and rosbridge port (default 9090)
-const char *host_ip = "172.31.1.21";
-const int host_port = 9090;
-char host[] = "ws://172.31.1.21:9090";
 
-char path[] = "/";
+WiFiMulti WiFiMulti;
+WebSocketsClient webSocket;
 
-WiFiClient client;
-WebSocketClient webSocketClient;
+#define USE_SERIAL Serial1
 
-bool testBit = true;
+void hexdump(const void *mem, uint32_t len, uint8_t cols = 16) {
+	const uint8_t* src = (const uint8_t*) mem;
+	USE_SERIAL.printf("\n[HEXDUMP] Address: 0x%08X len: 0x%X (%d)", (ptrdiff_t)src, len, len);
+	for(uint32_t i = 0; i < len; i++) {
+		if(i % cols == 0) {
+			USE_SERIAL.printf("\n[0x%08X] 0x%08X: ", (ptrdiff_t)src, i);
+		}
+		USE_SERIAL.printf("%02X ", *src);
+		src++;
+	}
+	USE_SERIAL.printf("\n");
+}
 
+void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
+  String msg;
+	switch(type) {
+		case WStype_DISCONNECTED:
+			USE_SERIAL.printf("[WSc] Disconnected!\n");
+			break;
+		case WStype_CONNECTED:
+			USE_SERIAL.printf("[WSc] Connected to url: %s\n", payload);
+
+			// send message to server when Connected
+			// webSocket.sendTXT("Connected");
+      msg = "{\"op\": \"advertise\", \"topic\": \"/mojo_panda_touching\", \"type\": \"std_msgs/Int16\"}"; // Update here
+      USE_SERIAL.print(msg);
+      webSocket.sendTXT(msg);
+			break;
+		case WStype_TEXT:
+			USE_SERIAL.printf("[WSc] get text: %s\n", payload);
+
+			// send message to server
+			// webSocket.sendTXT("message here");
+			break;
+		case WStype_BIN:
+			USE_SERIAL.printf("[WSc] get binary length: %u\n", length);
+			hexdump(payload, length);
+
+			// send data to server
+			// webSocket.sendBIN(payload, length);
+			break;
+		case WStype_ERROR:			
+		case WStype_FRAGMENT_TEXT_START:
+		case WStype_FRAGMENT_BIN_START:
+		case WStype_FRAGMENT:
+		case WStype_FRAGMENT_FIN:
+			break;
+	}
+
+}
 
 void setup() {
-  
-  Serial.begin(9600);
-  delay(1000);
-  Serial.flush();
-  Serial.println("Setup..");
-  delay(10);
-  WiFi.begin(ssid, password);
-   
-  while (WiFi.status() != WL_CONNECTED) {
-      delay(500);
-      Serial.print(".");
-  }
-   
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
-   
-  delay(5000);
+	// USE_SERIAL.begin(921600);
+	USE_SERIAL.begin(115200);
 
-  if(client.connect(host_ip, host_port)) {
-    Serial.println("Connected");
-  }else {
-      Serial.println("Connection failed.");
-      while(1) {
-      // Hang on failure
-    }
-  }
+	//Serial.setDebugOutput(true);
+	USE_SERIAL.setDebugOutput(true);
 
-  webSocketClient.path = path;
-  webSocketClient.host = host;
-  if (webSocketClient.handshake(client)) {
-    Serial.println("Handshake successful");
-  } else {
-    Serial.println("Handshake failed.");
-    while(1) {
-      // Hang on failure
-    } 
-  }
-  
+	USE_SERIAL.println();
+	USE_SERIAL.println();
+	USE_SERIAL.println();
+
+	for(uint8_t t = 4; t > 0; t--) {
+		USE_SERIAL.printf("[SETUP] BOOT WAIT %d...\n", t);
+		USE_SERIAL.flush();
+		delay(1000);
+	}
+
+	WiFiMulti.addAP("SSID", "PASSWORD"); // Update here
+
+	//WiFi.disconnect();
+	while(WiFiMulti.run() != WL_CONNECTED) {
+		delay(100);
+	}
+
+	// server address, port and URL
+	webSocket.begin("172.31.1.21", 9090, "/");
+
+	// event handler
+	webSocket.onEvent(webSocketEvent);
+
+	// use HTTP Basic Authorization this is optional remove if not needed
+	//webSocket.setAuthorization("user", "Password");
+
+	// try ever 5000 again if connection has failed
+	webSocket.setReconnectInterval(5000);
+
 }
-
 void loop() {
-  // put your main code here, to run repeatedly:
-  Serial.println("Loopin..");
-  
-  
-  if (client.connected()) {
-    if (testBit){
-      String msg = "{\"op\": \"advertise\", \"topic\": \"/panda_touching\", \"type\": \"std_msgs/Float32\"}";
-      Serial.println(msg);
-      webSocketClient.sendData(msg);
-      testBit=false;
-    } else {
-      String msg = "{\"op\": \"publish\", \"topic\": \"/panda_touching\", \"msg\": {\"data\":";
-      msg+= String(analogRead(A3));      
-      msg+= "}}";
-      Serial.println(msg);
-      webSocketClient.sendData(msg);
-    }
-    
+	webSocket.loop();
  
-  } else {
-    Serial.println("Client disconnected.");
-  }
-
+  String msg = "{\"op\": \"publish\", \"topic\": \"/mojo_panda_touching\", \"msg\": {\"data\":"; // Update here
+  msg+= String(analogRead(A3));      
+  msg+= "}}";
+  webSocket.sendTXT(msg);
 }
+
+
+
+
+
